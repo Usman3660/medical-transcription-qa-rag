@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import os
 from langchain_community.document_loaders import DataFrameLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_groq import ChatGroq
@@ -169,4 +169,5 @@ if prompt := st.chat_input("Ex: What are the symptoms of diabetes?"):
             st.session_state.messages.append({"role": "assistant", "content": result_text})
 
         except Exception as e:
+
             st.error(f"An error occurred: {str(e)}")
