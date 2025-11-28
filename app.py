@@ -1,245 +1,172 @@
 import streamlit as st
+import pandas as pd
 import os
-from langchain_text_splitters import RecursiveCharacterTextSplitter 
-from langchain_huggingface import HuggingFaceEmbeddings  
+from langchain_community.document_loaders import DataFrameLoader
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_groq import ChatGroq
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
-from langchain_core.documents import Document 
-import pandas as pd
+from langchain.schema import Document
 
-# Page config
-st.set_page_config(
-    page_title="Medical RAG QA System",
-    page_icon="🏥",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-# Custom CSS
-st.markdown("""
-<style>
-    .main-header {
-        font-size: 2.5rem;
-        color: #1f77b4;
-        text-align: center;
-        margin-bottom: 1rem;
-    }
-    .source-box {
-        background-color: #f0f2f6;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        margin: 0.5rem 0;
-    }
-    .stButton>button {
-        width: 100%;
-        background-color: #1f77b4;
-        color: white;
-    }
-</style>
-""", unsafe_allow_html=True)
+# --- Page Configuration ---
+st.set_page_config(page_title="Medical Assistant RAG", page_icon="🩺", layout="wide")
 
-# Initialize session state
-if 'qa_chain' not in st.session_state:
-    st.session_state.qa_chain = None
-if 'history' not in st.session_state:
-    st.session_state.history = []
+st.title("🩺 Medical Transcription AI Assistant")
+st.markdown("Ask questions based on the medical transcription database.")
+
+# --- Sidebar: Configuration ---
+with st.sidebar:
+    st.header("Settings")
+    groq_api_key = st.text_input("Enter Groq API Key", type="password")
+    st.markdown("[Get a Groq API Key](https://console.groq.com/keys)")
+    
+    st.divider()
+    st.markdown("### Model Details")
+    st.markdown("- **LLM:** Llama-3.3-70b-versatile")
+    st.markdown("- **Embeddings:** all-MiniLM-L6-v2")
+    st.markdown("- **Data:** Medical Transcriptions")
+
+# --- 1. Load and Cache Resources ---
 
 @st.cache_resource
-def load_rag_pipeline():
-    """Load the RAG pipeline with caching"""
-    try:
-        # Get API key from Streamlit secrets
-        api_key = st.secrets["GROQ_API_KEY"]
-        os.environ["GROQ_API_KEY"] = api_key
-        
-        # Load embeddings
-        embeddings = HuggingFaceEmbeddings(
-            model_name="sentence-transformers/all-MiniLM-L6-v2"
-        )
-        
-        # Load FAISS vector store
-        vectorstore = FAISS.load_local(
-            "medical_faiss",
-            embeddings,
-            allow_dangerous_deserialization=True
-        )
-        
-        retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
-        
-        # Initialize LLM
-        llm = ChatGroq(
-            model="llama-3.3-70b-versatile",
-            temperature=0.2,
-            max_tokens=512
-        )
-        
-        # Create prompt template
-        template = """You are a medical assistant. Use the medical context below to answer the question accurately.
-Cite the medical specialty when relevant. If you don't know, say so.
+def load_vector_db():
+    """
+    Loads the vector database. 
+    1. Tries to load a local FAISS index.
+    2. If not found, processes the CSV and creates a new index.
+    """
+    embedding_model = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+    faiss_path = "faiss_index"
 
-Context: {context}
-
-Question: {question}
-
-Answer:"""
-        
-        prompt = PromptTemplate(
-            template=template,
-            input_variables=["context", "question"]
-        )
-        
-        # Create QA chain
-        qa_chain = RetrievalQA.from_chain_type(
-            llm=llm,
-            retriever=retriever,
-            return_source_documents=True,
-            chain_type_kwargs={"prompt": prompt}
-        )
-        
-        return qa_chain
-        
-    except Exception as e:
-        st.error(f"Error loading pipeline: {str(e)}")
+    # Check if pre-built index exists
+    if os.path.exists(faiss_path):
+        st.toast("Loading existing vector store...", icon="💾")
+        return FAISS.load_local(faiss_path, embedding_model, allow_dangerous_deserialization=True)
+    
+    # Otherwise build from CSV
+    if not os.path.exists("mtsamples.csv"):
+        st.error("mtsamples.csv not found! Please place the dataset in the app directory.")
         return None
 
-# Header
-st.markdown('<h1 class="main-header">🏥 Medical RAG QA System</h1>', unsafe_allow_html=True)
-st.markdown("---")
-
-# Sidebar
-with st.sidebar:
-    st.header("ℹ️ About")
-    st.info("""
-    This system uses Retrieval-Augmented Generation (RAG) to answer medical questions 
-    based on 4,999 clinical transcriptions.
-    
-    **Features:**
-    - 🔍 Semantic search across medical records
-    - 🤖 AI-powered answer generation
-    - 📚 Source citation and grounding
-    - ⚡ Fast retrieval with FAISS
-    """)
-    
-    st.header("📊 Stats")
-    st.metric("Medical Records", "4,999")
-    st.metric("Text Chunks", "~15,000")
-    st.metric("Medical Specialties", "40+")
-    
-    st.header("🔧 Configuration")
-    st.code("""
-Model: Llama 3.3 70B
-Embeddings: all-MiniLM-L6-v2
-Vector DB: FAISS
-Top-k: 3 sources
-    """)
-    
-    st.header("⚠️ Disclaimer")
-    st.warning("This is for educational purposes only. Not for clinical use.")
-
-# Main content
-col1, col2 = st.columns([2, 1])
-
-with col1:
-    st.subheader("💬 Ask a Medical Question")
-    
-    # Example questions
-    examples = [
-        "What are the symptoms of diabetes?",
-        "How is hypertension diagnosed?",
-        "What is the treatment for pneumonia?",
-        "Describe the procedure for colonoscopy",
-        "What are complications of coronary artery disease?"
-    ]
-    
-    selected_example = st.selectbox(
-        "Or choose an example:",
-        [""] + examples,
-        index=0
-    )
-    
-    # Question input
-    question = st.text_area(
-        "Enter your question:",
-        value=selected_example if selected_example else "",
-        height=100,
-        placeholder="e.g., What are the risk factors for stroke?"
-    )
-    
-    col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 2])
-    with col_btn1:
-        submit = st.button("🔍 Get Answer", type="primary")
-    with col_btn2:
-        clear = st.button("🗑️ Clear")
-    
-    if clear:
-        st.session_state.history = []
-        st.rerun()
-
-with col2:
-    st.subheader("📈 Quick Stats")
-    if st.session_state.history:
-        st.metric("Questions Asked", len(st.session_state.history))
-        avg_sources = sum(h['num_sources'] for h in st.session_state.history) / len(st.session_state.history)
-        st.metric("Avg Sources/Query", f"{avg_sources:.1f}")
-
-# Process question
-if submit and question:
-    with st.spinner("🔍 Searching medical records and generating answer..."):
-        # Load pipeline
-        if st.session_state.qa_chain is None:
-            st.session_state.qa_chain = load_rag_pipeline()
+    with st.spinner("Building Knowledge Base (this takes a minute)..."):
+        # Load and clean data
+        df = pd.read_csv('mtsamples.csv')
+        df = df.dropna(subset=['transcription'])
+        df['medical_specialty'] = df['medical_specialty'].fillna('Unknown')
+        df['description'] = df['description'].fillna('')
         
-        if st.session_state.qa_chain:
-            try:
-                # Get answer
-                result = st.session_state.qa_chain({"query": question})
-                
-                # Display answer
-                st.success("✅ Answer Generated")
-                st.markdown("### 📝 Answer")
-                st.markdown(f"<div style='background-color: #e8f4f8; padding: 1.5rem; border-radius: 0.5rem; border-left: 5px solid #1f77b4;'>{result['result']}</div>", unsafe_allow_html=True)
-                
-                # Display sources
-                st.markdown("### 📚 Source Documents")
-                sources = result['source_documents']
-                
-                for i, doc in enumerate(sources, 1):
-                    with st.expander(f"📄 Source {i}: {doc.metadata.get('specialty', 'Unknown')}"):
-                        st.markdown(f"**Medical Specialty:** {doc.metadata.get('specialty', 'N/A')}")
-                        st.markdown(f"**Description:** {doc.metadata.get('description', 'N/A')}")
-                        st.markdown("**Content:**")
-                        st.text(doc.page_content[:500] + "..." if len(doc.page_content) > 500 else doc.page_content)
-                
-                # Add to history
-                st.session_state.history.append({
-                    'question': question,
-                    'answer': result['result'],
-                    'num_sources': len(sources)
-                })
-                
-            except Exception as e:
-                st.error(f"Error generating answer: {str(e)}")
-        else:
-            st.error("Failed to load RAG pipeline. Check your configuration.")
+        # Create context text
+        df['full_text'] = (
+            "Specialty: " + df['medical_specialty'] + "\n" +
+            "Case: " + df['description'] + "\n" +
+            "Content: " + df['transcription']
+        )
 
-# History section
-if st.session_state.history:
-    st.markdown("---")
-    st.subheader("📜 Query History")
-    
-    for i, item in enumerate(reversed(st.session_state.history), 1):
-        with st.expander(f"Q{len(st.session_state.history) - i + 1}: {item['question'][:60]}..."):
-            st.markdown(f"**Question:** {item['question']}")
-            st.markdown(f"**Answer:** {item['answer']}")
-            st.caption(f"Sources: {item['num_sources']}")
+        # Split text
+        splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
+        docs = []
+        for _, row in df.iterrows():
+            chunks = splitter.split_text(row['full_text'])
+            for chunk in chunks:
+                docs.append(Document(
+                    page_content=chunk,
+                    metadata={
+                        'specialty': row['medical_specialty'],
+                        'description': row['description'][:100]
+                    }
+                ))
 
-# Footer
-st.markdown("---")
-st.markdown("""
-<div style='text-align: center; color: #666;'>
-    <p>Built with LangChain • Groq • FAISS • Streamlit</p>
-    <p>📊 <a href='https://github.com/YOUR_USERNAME/medical-rag-qa-system'>View on GitHub</a></p>
-</div>
-""", unsafe_allow_html=True)
+        # Create Vector Store
+        vectorstore = FAISS.from_documents(docs, embedding_model)
+        vectorstore.save_local(faiss_path)
+        st.toast("Index built and saved!", icon="✅")
+        
+        return vectorstore
 
+# Initialize Vector Store
+if "vectorstore" not in st.session_state:
+    st.session_state.vectorstore = load_vector_db()
+
+# --- 2. Chat Logic ---
+
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+# Display chat history
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
+# User Input
+if prompt := st.chat_input("Ex: What are the symptoms of diabetes?"):
+    # Add user message to history
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
+
+    # Check dependencies
+    if not groq_api_key:
+        st.error("Please enter your Groq API Key in the sidebar to proceed.")
+        st.stop()
+        
+    if st.session_state.vectorstore is None:
+        st.error("Vector Store not initialized. Please check dataset.")
+        st.stop()
+
+    # Generate Response
+    with st.chat_message("assistant"):
+        message_placeholder = st.empty()
+        
+        try:
+            # Initialize LLM
+            llm = ChatGroq(
+                groq_api_key=groq_api_key,
+                model_name="llama-3.3-70b-versatile",
+                temperature=0.2,
+                max_tokens=512
+            )
+
+            # Setup Retriever
+            retriever = st.session_state.vectorstore.as_retriever(search_kwargs={"k": 3})
+
+            # Setup Prompt
+            template = """Use the medical context to answer the question accurately.
+            Cite the medical specialty when relevant.
+            If you don't know the answer, just say that you don't know, don't try to make up an answer.
+
+            Context: {context}
+
+            Question: {question}
+
+            Answer:"""
+            
+            QA_CHAIN_PROMPT = PromptTemplate(input_variables=["context", "question"], template=template)
+
+            qa_chain = RetrievalQA.from_chain_type(
+                llm=llm,
+                retriever=retriever,
+                return_source_documents=True,
+                chain_type_kwargs={"prompt": QA_CHAIN_PROMPT}
+            )
+
+            # Run Chain
+            response = qa_chain.invoke({"query": prompt})
+            result_text = response['result']
+            source_docs = response['source_documents']
+
+            # Display Result
+            message_placeholder.markdown(result_text)
+            
+            # Display Sources in Expander
+            with st.expander("📚 View Medical Sources"):
+                for i, doc in enumerate(source_docs):
+                    st.markdown(f"**Source {i+1} (Specialty: {doc.metadata['specialty']})**")
+                    st.info(doc.page_content)
+
+            # Add assistant response to history
+            st.session_state.messages.append({"role": "assistant", "content": result_text})
+
+        except Exception as e:
+            st.error(f"An error occurred: {str(e)}")
