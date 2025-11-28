@@ -1,11 +1,12 @@
 import streamlit as st
 import os
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_text_splitters import RecursiveCharacterTextSplitter 
+from langchain_huggingface import HuggingFaceEmbeddings  
 from langchain_community.vectorstores import FAISS
 from langchain_groq import ChatGroq
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
+from langchain_core.documents import Document 
 import pandas as pd
 
 # Page config
@@ -15,7 +16,6 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
-
 # Custom CSS
 st.markdown("""
 <style>
@@ -242,3 +242,4 @@ st.markdown("""
     <p>📊 <a href='https://github.com/YOUR_USERNAME/medical-rag-qa-system'>View on GitHub</a></p>
 </div>
 """, unsafe_allow_html=True)
+
