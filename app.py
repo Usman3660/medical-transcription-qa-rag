@@ -7,16 +7,14 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_groq import ChatGroq
 from langchain.chains import RetrievalQA
-from langchain.prompts import PromptTemplate
-from langchain.schema import Document
+from langchain_core.prompts import PromptTemplate
+from langchain_core.documents import Document
 
-# --- Page Configuration ---
 st.set_page_config(page_title="Medical Assistant RAG", page_icon="🩺", layout="wide")
 
 st.title("🩺 Medical Transcription AI Assistant")
 st.markdown("Ask questions based on the medical transcription database.")
 
-# --- Sidebar: Configuration ---
 with st.sidebar:
     st.header("Settings")
     groq_api_key = st.text_input("Enter Groq API Key", type="password")
@@ -28,7 +26,6 @@ with st.sidebar:
     st.markdown("- **Embeddings:** all-MiniLM-L6-v2")
     st.markdown("- **Data:** Medical Transcriptions")
 
-# --- 1. Load and Cache Resources ---
 
 @st.cache_resource
 def load_vector_db():
@@ -171,3 +168,4 @@ if prompt := st.chat_input("Ex: What are the symptoms of diabetes?"):
         except Exception as e:
 
             st.error(f"An error occurred: {str(e)}")
+
