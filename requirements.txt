@@ -1,10 +1,10 @@
 streamlit
 pandas
-langchain>=0.2.0
-langchain-community
-langchain-core
-langchain-text-splitters
-langchain-groq
+langchain>=0.3.0
+langchain-community==0.3.0
+langchain-core==0.3.0
+langchain-text-splitters==0.3.0
+langchain-groq==0.2.0
 faiss-cpu
 sentence-transformers
 huggingface-hub
